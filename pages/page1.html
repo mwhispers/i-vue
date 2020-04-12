@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="../dist/iVue-1.js"></script>
+</head>
+<body>
+    <div id="app">
+
+    </div>
+    <script>
+        var component = {
+            render:function(h){
+                return h()
+            }
+        }
+        new iVue({
+            el:'#app',
+            render:function(h){
+                return h('p',{},[
+                    h('div',{},undefined,'Good morning!'),
+                    h('div',{},undefined,'Nice to meet you!')
+                ]);
+            }
+        })
+    </script>
+</body>
+</html>
