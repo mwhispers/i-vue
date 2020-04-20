@@ -14,27 +14,58 @@ var iVue = (function () {
         children;
         text;
         elm;
+        context;
+        componentOptions;
+
+        isComment;
         
-        constructor(tag, data, children,text, elm){
+        constructor(tag, data, children,text, elm, context, componentOptions){
             this.tag = tag;
             this.data = data;
             this.children = children;
             this.text = text;
             this.elm = elm;
+            this.context = context;
+            this.componentOptions = componentOptions;
+
+            this.isComment = false;
         }
     }
 
-    function createElement(context, tag, data, children,text,elm){
-        return _createElement(context, tag, data, children,text,elm);
+    function createTextVNode(val){
+        return new VNode(undefined, undefined, undefined,String(val));
     }
 
-    function _createElement(context, tag, data, children,text,elm){
-        return new VNode(tag,data,children,text,elm);
+    function isPrimitive(value){
+        return (
+            typeof value === 'string' || 
+            typeof value === 'number' ||
+            typeof value === 'boolean' 
+        )
+    }
+
+    function normalizeChildren(children){
+        return isPrimitive(children)
+          ? [createTextVNode(children)]
+          : children
+    }
+
+    function createElement(context, tag, data, children,normalizationType,alwaysNormalize){
+        if(Array.isArray(data) || isPrimitive(data)){
+            children = data;
+            data = undefined;
+        }
+        return _createElement(context, tag, data, children);
+    }
+
+    function _createElement(context, tag, data, children,normalizationType){
+        children = normalizeChildren(children);
+        return new VNode(tag,data,children,undefined,undefined);
     }
 
     function initRender(vm){
-        vm._c = (a, b, c, d) => createElement(vm, a, b, c, d, false);
-        vm.$createElement = (a, b, c, d) => createElement(vm, a, b, c, d, true);
+        vm._c = (a, b, c, d) => createElement(vm, a, b, c);
+        vm.$createElement = (a, b, c, d) => createElement(vm, a, b, c);
     }
 
     function renderMixin(iVue){
@@ -142,11 +173,11 @@ var iVue = (function () {
         }
 
         function createChildren(vnode,children, insertedVnodeQueue){
-            if(children){
+            if(Array.isArray(children)){
                 for(let i = 0; i < children.length; ++i){
                     createElm(children[i],insertedVnodeQueue,vnode.elm);
                 }
-            }else {
+            }else if(isPrimitive(vnode.text)){
                 vnode.elm.appendChild(document.createTextNode(vnode.text));
             }
             

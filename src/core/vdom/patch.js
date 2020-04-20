@@ -1,4 +1,5 @@
 import VNode from './vnode.js'
+import { isPrimitive } from '../../shared/util.js';
 
 export function createPatchFunction(){
 
@@ -27,11 +28,11 @@ export function createPatchFunction(){
     }
 
     function createChildren(vnode,children, insertedVnodeQueue){
-        if(children){
+        if(Array.isArray(children)){
             for(let i = 0; i < children.length; ++i){
                 createElm(children[i],insertedVnodeQueue,vnode.elm);
             }
-        }else{
+        }else if(isPrimitive(vnode.text)){
             vnode.elm.appendChild(document.createTextNode(vnode.text));
         }
         
