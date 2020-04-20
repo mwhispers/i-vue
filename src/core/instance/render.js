@@ -1,4 +1,4 @@
-import {createElement} from '../vdom/createElement.js'
+import {createElement} from '../vdom/create-element.js'
 
 export function initRender(vm){
     vm._c = (a, b, c, d) => createElement(vm, a, b, c, d, false);
