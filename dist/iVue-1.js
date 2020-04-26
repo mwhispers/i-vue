@@ -44,10 +44,100 @@ var iVue = (function () {
         )
     }
 
+    function isDef(v){
+        return v !== undefined && v !== null;
+    }
+
+    function isUndef(v){
+        return v === undefined || v === null;
+    }
+
+    function isObject(obj){
+        return obj !== null && typeof obj === 'object';
+    }
+
     function normalizeChildren(children){
         return isPrimitive(children)
           ? [createTextVNode(children)]
           : children
+    }
+
+    function createComponent(
+        Ctor,
+        data,
+        context,
+        children,
+        tag
+    ){
+        if(isUndef(Ctor)){
+            return
+        }
+
+        const baseCtor = context.$options._base;
+
+        if(isObject(Ctor)){
+            Ctor = baseCtor.extend(Ctor);
+        }
+
+        data = data || {};
+
+        installComponentHooks(data);
+
+        const name = Ctor.options.name || tag;
+
+        const vnode = new VNode(
+            `vue-component-${Ctor.id}${name ? `-${name}` : ''}`,
+            data,
+            undefined,
+            undefined,
+            undefined,
+            context,
+            { Ctor, undefined, undefined, tag, children }
+        );
+        return vnode;
+    }
+
+    const componentVNodeHooks = {
+        init(vnode, hydrating){
+            const child = vnode.componentInstance = createComponentInstanceForVnode(
+                vnode
+            );
+            child.$mount(undefined, hydrating);
+        }
+    };
+
+    const hooksToMerge = Object.keys(componentVNodeHooks);
+
+    function createComponentInstanceForVnode(vnode, parent){
+        const options = {
+            _isComponent:true,
+            _parentVnode:vnode,
+            parent
+        };
+
+        return new vnode.componentOptions.Ctor(options);
+    }
+
+    function installComponentHooks(data){
+        const hooks = data.hook || (data.hook = {});
+        for(let i = 0; i < hooksToMerge.length; i++){
+            const key = hooksToMerge[i];
+            const existing = hooks[key];
+            const toMerge = componentVNodeHooks[key];
+            if(existing !== toMerge && !(existing && existing._merged)){
+                hooks[key] = existing ? mergeHook(toMerge, existing) : toMerge;
+            }
+        }
+    }
+
+    function mergeHook(f1, f2){
+        const merged = (a, b) => {
+            f1(a, b);
+            f2(a, b);
+        };
+
+        merged._merged = true;
+        return merged;
     }
 
     function createElement(context, tag, data, children,normalizationType,alwaysNormalize){
@@ -60,6 +150,9 @@ var iVue = (function () {
 
     function _createElement(context, tag, data, children,normalizationType){
         children = normalizeChildren(children);
+        if(typeof(tag) === 'object'){
+            return createComponent(tag, data, context,children)
+        }
         return new VNode(tag,data,children,undefined,undefined);
     }
 
@@ -87,7 +180,8 @@ var iVue = (function () {
             vm._uid = uid++;
             vm._isVue = true;
             //TODO expand
-            vm.$options = options;
+            vm.$options = mergeOptions(vm.constructor.options,options);
+            vm.$options._base = iVue;
 
             initRender(vm);
 
@@ -95,6 +189,16 @@ var iVue = (function () {
                 vm.$mount(vm.$options.el);
             }
         };
+    }
+
+    function mergeOptions(ctorOptions,options){
+        if(!ctorOptions){
+            ctorOptions = {};
+        }
+        for(let prop in options){
+            ctorOptions[prop] = options[prop];
+        }
+        return ctorOptions;
     }
 
     function lifecycleMixin(iVue){
@@ -133,6 +237,40 @@ var iVue = (function () {
     lifecycleMixin(iVue);
     renderMixin(iVue);
 
+    function initExtend(Vue){
+        Vue.cid = 0;
+        let cid = 1;
+
+        Vue.extend = function(extendOptions){
+            extendOptions = extendOptions || {};
+            const Super = this;
+            const SuperId = Super.cid;
+            const cachedCtors = extendOptions._Ctor || (extendOptions._Ctor = {});
+            if(cachedCtors[SuperId]){
+                return cachedCtors[SuperId];
+            }
+
+            const Sub = function VueComponent(options){
+                this._init(options);
+            };
+
+            Sub.prototype = Object.create(Super.prototype);
+            Sub.prototype.constructor = Sub;
+            Sub.cid = cid++;
+            Sub.options = extendOptions;
+            Sub['super'] = Super;
+            return Sub;
+        };
+    }
+
+    function initGlobalAPI(iVue){
+        initExtend(iVue);
+    }
+
+    initGlobalAPI(iVue);
+
+    iVue.version = '_VERSION_';
+
     function query(el){
         if(typeof el === 'string'){
             const selected = document.querySelector(el);
@@ -146,59 +284,97 @@ var iVue = (function () {
         }
     }
 
-    function createPatchFunction(){
+    function createPatchFunction() {
 
-        function parentNode(elm){
+        function parentNode(elm) {
             return elm.parentNode;
         }
 
-        function tagName(elm){
+        function tagName(elm) {
             return elm.tagName;
         }
 
-        function emptyNodeAt(elm){
-            return new VNode(tagName(elm).toLowerCase(),{},[],undefined,elm);
+        function emptyNodeAt(elm) {
+            return new VNode(tagName(elm).toLowerCase(), {}, [], undefined, elm);
         }
 
-        function createElm(vnode, insertedVnodeQueue, parentElm, refElm){
+        function createComponent(vnode, insertedVnodeQueue, parentElm, refElm) {
+            let i = vnode.data;
+            if (isDef(i)) {
+                if (isDef(i = i.hook) && isDef(i = i.init)) {
+                    i(vnode, false);
+                }
+
+                if (isDef(vnode.componentInstance)) {
+                    initComponent(vnode);
+                    insert(parentElm, vnode.elm);
+                }
+                return true;
+            }
+        }
+
+        function initComponent(vnode, insertedVnodeQueue) {
+            vnode.elm = vnode.componentInstance.$el;
+        }
+
+        function createElm(vnode, insertedVnodeQueue, parentElm, refElm) {
+
+            if (createComponent(vnode, insertedVnodeQueue, parentElm)) {
+                return
+            }
+
             const data = vnode.data;
             const children = vnode.children;
             const tag = vnode.tag;
 
             vnode.elm = document.createElement(tag);
 
-            createChildren(vnode,children,[]);
+            if (tag) {
+                createChildren(vnode, children, []);
+                if (parentElm) {
+                    insert(parentElm, vnode.elm);
+                }
+            } else {
+                vnode.elm = document.createTextNode(vnode.text);
+                insert(parentElm, vnode.elm);
+            }
 
-            insert(parentElm,vnode.elm);
+
+
         }
 
-        function createChildren(vnode,children, insertedVnodeQueue){
-            if(Array.isArray(children)){
-                for(let i = 0; i < children.length; ++i){
-                    createElm(children[i],insertedVnodeQueue,vnode.elm);
+        function createChildren(vnode, children, insertedVnodeQueue) {
+            if (Array.isArray(children)) {
+                for (let i = 0; i < children.length; ++i) {
+                    createElm(children[i], insertedVnodeQueue, vnode.elm);
                 }
-            }else if(isPrimitive(vnode.text)){
+            } else if (isPrimitive(vnode.text)) {
                 vnode.elm.appendChild(document.createTextNode(vnode.text));
             }
-            
+
         }
 
-        function insert(parent, elm, ref){
+        function insert(parent, elm, ref) {
             parent.appendChild(elm);
         }
 
-        return function patch(oldVnode, vnode, hydrating, removeonly){
+        return function patch(oldVnode, vnode, hydrating, removeonly) {
+            console.log(vnode);
+            if (isUndef(oldVnode)) {
+                createElm(vnode, {});
+            } else {
+                const isRealElement = oldVnode.nodeType != null;
 
-            const isRealElement = oldVnode.nodeType != null;
+                if (isRealElement) {
+                    oldVnode = emptyNodeAt(oldVnode);
+                }
 
-            if(isRealElement){
-                oldVnode = emptyNodeAt(oldVnode);
+                const oldElm = oldVnode.elm;
+                const parentElm = parentNode(oldElm);
+
+                createElm(vnode, [], parentElm);
             }
 
-            const oldElm = oldVnode.elm;
-            const parentElm = parentNode(oldElm);
-
-            createElm(vnode, [], parentElm);
             return vnode.elm;
         }
     }

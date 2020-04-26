@@ -1,6 +1,7 @@
 import VNode from './vnode.js';
 import {isPrimitive, isTrue} from '../../shared/util.js';
 import {normalizeChildren} from './helpers/normalize-children.js';
+import { createComponent } from './create-componet.js';
 
 const ALWAYS_NORMALIZE = 2;
 
@@ -18,5 +19,8 @@ export function createElement(context, tag, data, children,normalizationType,alw
 
 export function _createElement(context, tag, data, children,normalizationType){
     children = normalizeChildren(children);
+    if(typeof(tag) === 'object'){
+        return createComponent(tag, data, context,children)
+    }
     return new VNode(tag,data,children,undefined,undefined);
 }

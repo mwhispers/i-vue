@@ -11,12 +11,22 @@
 
     </div>
     <script>
+        var component = {
+            render:function(h){
+                return h('div',[
+                    h('p','I am component 1'),
+                    h('p','I am component 2')
+                ])
+            }
+        }
         new iVue({
             el:'#app',
             render:function(h){
                 return h('p',[
+                    h(component),
                     h('div','Good morning!!!!!'),
-                    h('div','Nice to meet you!!!!!!')
+                    h('div','Nice to meet you!!!!!!'),
+                    h(component)
                 ]);
             }
         })

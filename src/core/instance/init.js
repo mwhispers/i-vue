@@ -7,7 +7,8 @@ export function initMixin(iVue){
         vm._uid = uid++;
         vm._isVue = true;
         //TODO expand
-        vm.$options = options;
+        vm.$options = mergeOptions(vm.constructor.options,options);
+        vm.$options._base = iVue;
 
         initRender(vm);
 
@@ -15,4 +16,14 @@ export function initMixin(iVue){
             vm.$mount(vm.$options.el);
         }
     }
+}
+
+function mergeOptions(ctorOptions,options){
+    if(!ctorOptions){
+        ctorOptions = {};
+    }
+    for(let prop in options){
+        ctorOptions[prop] = options[prop];
+    }
+    return ctorOptions;
 }
