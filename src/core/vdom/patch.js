@@ -1,7 +1,26 @@
 import VNode from './vnode.js'
 import { isPrimitive, isDef, isUndef } from '../../shared/util.js';
 
-export function createPatchFunction() {
+export const emptyNode = new VNode('', {}, []);
+
+const hooks = ['create', 'activate', 'update', 'remove', 'destroy'];
+
+export function createPatchFunction(backend) {
+
+    let i, j;
+
+    const cbs = {};
+
+    const { modules, nodeOps} = backend;
+
+    for(i = 0; i < hooks.length; i++){
+        cbs[hooks[i]] = [];
+        for(j = 0; j < hooks.length; j++){
+            if(isDef(modules[j][hooks[i]])){
+                cbs[hooks[i]].push(modules[j][hooks[i]])
+            }
+        }
+    }
 
     function parentNode(elm) {
         return elm.parentNode;
@@ -32,6 +51,7 @@ export function createPatchFunction() {
 
     function initComponent(vnode, insertedVnodeQueue) {
         vnode.elm = vnode.componentInstance.$el;
+        invokeCreateHooks(vnode, insertedVnodeQueue);
     }
 
     function createElm(vnode, insertedVnodeQueue, parentElm, refElm) {
@@ -69,6 +89,12 @@ export function createPatchFunction() {
             vnode.elm.appendChild(document.createTextNode(vnode.text));
         }
 
+    }
+
+    function invokeCreateHooks(vnode, insertedVnodeQueue){
+        for(let i = 0; i < cbs.create.length; i++){
+            cbs.create[i](emptyNode, vnode);
+        }
     }
 
     function insert(parent, elm, ref) {
