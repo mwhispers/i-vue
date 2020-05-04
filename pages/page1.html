@@ -13,7 +13,12 @@
     <script>
         var component = {
             render:function(h){
-                return h('div',[
+                return h('div',{
+                    style:{
+                        color:'#ff0000'
+                    }
+                },
+                [
                     h('p','I am component 1'),
                     h('p','I am component 2')
                 ])
@@ -24,7 +29,11 @@
             render:function(h){
                 return h('p',[
                     h(component),
-                    h('div','Good morning!!!!!'),
+                    h('div',{
+                        style:{
+                            color:'#ff9900'
+                        }
+                    },'Good morning!!!!!'),
                     h('div','Nice to meet you!!!!!!'),
                     h(component)
                 ]);

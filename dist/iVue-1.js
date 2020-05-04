@@ -36,6 +36,24 @@ var iVue = (function () {
         return new VNode(undefined, undefined, undefined,String(val));
     }
 
+    function extend(to, _from){
+        for(const key in _from){
+            to[key] = _from[key];
+        }
+
+        return to;
+    }
+
+    function toObject (arr){
+        const res = {};
+        for(let i = 0; i < arr.length; i++){
+            if(arr[i]){
+                extend(res,arr[i]);
+            }
+        }
+        return res;
+    }
+
     function isPrimitive(value){
         return (
             typeof value === 'string' || 
@@ -55,6 +73,26 @@ var iVue = (function () {
     function isObject(obj){
         return obj !== null && typeof obj === 'object';
     }
+
+    function cached(fn){
+        const cache = Object.create(null);
+        return function cachedFn(str){
+            const hit = cache[str];
+            return hit || (cache[str] = fn(str));
+        }
+    }
+
+    const camelizeRE = /-(\w)/g;
+
+    const camelize = cached((str)=>{
+        return str.replace(camelizeRE,(_, c) => c ? c.toUpperCase() : '');
+    });
+
+    const hyphenateRE = /\B([A-Z]])/g;
+
+    const hyphenate = cached((str)=>{
+        return str.replace(hyphenateRE, '-$1').toLowerCase()
+    });
 
     function normalizeChildren(children){
         return isPrimitive(children)
@@ -284,18 +322,29 @@ var iVue = (function () {
         }
     }
 
-    function createPatchFunction() {
+    const emptyNode = new VNode('', {}, []);
 
-        function parentNode(elm) {
-            return elm.parentNode;
-        }
+    const hooks = ['create', 'activate', 'update', 'remove', 'destroy'];
 
-        function tagName(elm) {
-            return elm.tagName;
+    function createPatchFunction(backend) {
+
+        let i, j;
+
+        const cbs = {};
+
+        const { modules, nodeOps} = backend;
+
+        for(i = 0; i < hooks.length; i++){
+            cbs[hooks[i]] = [];
+            for(j = 0; j < modules.length; j++){
+                if(isDef(modules[j][hooks[i]])){
+                    cbs[hooks[i]].push(modules[j][hooks[i]]);
+                }
+            }
         }
 
         function emptyNodeAt(elm) {
-            return new VNode(tagName(elm).toLowerCase(), {}, [], undefined, elm);
+            return new VNode(nodeOps.tagName(elm).toLowerCase(), {}, [], undefined, elm);
         }
 
         function createComponent(vnode, insertedVnodeQueue, parentElm, refElm) {
@@ -308,9 +357,10 @@ var iVue = (function () {
                 if (isDef(vnode.componentInstance)) {
                     initComponent(vnode);
                     insert(parentElm, vnode.elm);
+                    return true
                 }
-                return true;
             }
+            return false
         }
 
         function initComponent(vnode, insertedVnodeQueue) {
@@ -331,6 +381,9 @@ var iVue = (function () {
 
             if (tag) {
                 createChildren(vnode, children, []);
+                if(isDef(data)){
+                    invokeCreateHooks(vnode);
+                }
                 if (parentElm) {
                     insert(parentElm, vnode.elm);
                 }
@@ -354,6 +407,12 @@ var iVue = (function () {
 
         }
 
+        function invokeCreateHooks(vnode, insertedVnodeQueue){
+            for(let i = 0; i < cbs.create.length; i++){
+                cbs.create[i](emptyNode, vnode);
+            }
+        }
+
         function insert(parent, elm, ref) {
             parent.appendChild(elm);
         }
@@ -370,7 +429,7 @@ var iVue = (function () {
                 }
 
                 const oldElm = oldVnode.elm;
-                const parentElm = parentNode(oldElm);
+                const parentElm = nodeOps.parentNode(oldElm);
 
                 createElm(vnode, [], parentElm);
             }
@@ -379,7 +438,219 @@ var iVue = (function () {
         }
     }
 
-    const patch = createPatchFunction();
+    const parseStyleText = cached(function(cssText) {
+        const res = {};
+        const listDelimiter = /;(?![^(]*\))/g;
+        const propertyDelimiter = /:(.+)/;
+        cssText.split(listDelimiter).forEach(function(item) {
+            if(item){
+                const tmp = item.split(propertyDelimiter);
+                tmp.length > 1 && (res[tmp[0].trim()] = tmp[1].trim());
+            }
+        });
+        return res;
+    });
+
+    function normalizeStyleData(data){
+        const style = normalizeStyleBinding(data.style);
+
+        return data.staticStyle
+          ? extend(data.staticStyle, style)
+          : style;
+    }
+
+    function normalizeStyleBinding(bindingStyle){
+        if(Array.isArray(bindingStyle)){
+            return toObject(bindingStyle);
+        }
+        if(typeof bindingStyle === 'string'){
+            return parseStyleText(bindingStyle);
+        }
+        return bindingStyle;
+    }
+
+    function getStyle(vnode, checkChild){
+        const res = {};
+        let styleData;
+        
+        if(checkChild){
+            let childNode = vnode;
+            while(childNode.componentInstance){
+                childNode = childNode.componentInstance._vnode;
+                if(childNode && childNode.data && (styleData = normalizeStyleData(childNode.data))){
+                    extend(res, styleData);
+                }
+            }
+        }
+
+        if(styleData =  normalizeStyleData(vnode.data)){
+            extend(res, styleData);
+        }
+
+        let parentNode = vnode;
+        while((parentNode = parentNode.parent)){
+            if(parentNode.data && (styleData = normalizeStyleData(parentNode.data))){
+                extend(res, styleData);
+            }
+        }
+
+        return res;
+    }
+
+    const cssVarRE = /^--/;
+    const importantRE = /\s*!important$/;
+
+    const setProp = (el, name, val) => {
+        if(cssVarRE.test(name)){
+            el.style.setProperty(name,val);
+        }else if(importantRE.test(val)){
+            el.style.setProperty(hyphenate(name), val.replace(importantRE, ''), 'important');
+        }else {
+            const normalizedName = normalize(name);
+            if(Array.isArray(val)){
+                for(let i = 0, len = val.length; i < len; i++){
+                    el.style[normalizedName] = val[i];
+                }
+            }else {
+                el.style[normalizedName] = val;
+            } 
+        }
+    };
+
+    const vendorNames = ['webkit', 'Moz', 'ms'];
+
+    let emptyStyle;
+
+    const normalize = cached(function(prop) {
+        emptyStyle = emptyStyle || document.createElement('div').style;
+        prop = camelize(prop);
+        if(prop !== 'filter' && (prop in emptyStyle)){
+            return prop;
+        }
+        const capName = prop.chartAt(0).toUpperCase() + prop.slice(1);
+
+        for(let i = 0; i < vendorNames.length; i++){
+            const name = vendorNames[i] + capName;
+            if(name in emptyStyle){
+                return name;
+            }
+        }
+    });
+
+    function updateStyle(oldVnode, vnode){
+        const data = vnode.data;
+        const oldData = oldVnode.data;
+
+        if(isUndef(data.staticStyle) && isUndef(data.style) && isUndef(oldData.staticStyle) && isUndef(oldData.style)){
+            return
+        }
+
+        let cur, name;
+        const el = vnode.elm;
+        const oldStaticStyle = oldData.staticStyle;
+        const oldStyleBinding = oldData.normalizedStyle || oldData.style || {};
+
+        const oldStyle = oldStaticStyle || oldStyleBinding;
+
+        const style = normalizeStyleBinding(vnode.data.style) || {};
+
+        vnode.data.normalizedStyle = isDef(style.__ob__)
+          ? extend({}, style)
+          : style;
+        
+        const newStyle = getStyle(vnode, true);
+
+        for(name in oldStyle){
+            if(isUndef(newStyle[name])){
+                setProp(el, name, '');
+            }
+        }
+
+        for(name in newStyle){
+            cur = newStyle[name];
+            if(cur !== oldStyle[name]){
+                setProp(el, name, cur == null ? '' : cur);
+            }
+        }
+    }
+
+    var style = {
+        create: updateStyle,
+        update: updateStyle
+    };
+
+    var modules = [
+        style
+    ];
+
+    function createElement$1(tagName, vnode){
+        const elm = document.createElement(tagName);
+        if(tagName != 'select'){
+            return elm;
+        }    
+        if(vnode.data && vnode.data.attrs && vnode.data.attrs.multiple !== undefined){
+            elm.setAttribute('multiple', 'multiple');
+        }
+        return elm;
+    }
+
+
+    function createTextNode(text){
+        return document.createTextNode(text);
+    }
+
+    function createComment(text){
+        return document.createComment(text);
+    }
+
+    function insertBefore(parentNode, newNode, referenceNode){
+        parentNode.insertBefore(newNode,referenceNode);
+    }
+
+    function removeChild(node, child){
+        node.removeChild(child);
+    }
+
+    function appendChild(node, child){
+        node.appendChild(child);
+    }
+
+    function parentNode(node){
+        return node.parentNode;
+    }
+
+    function nextSibling(node){
+        return node.nextSibling;
+    }
+
+    function tagName(node) {
+        return node.tagName;
+    }
+
+    function setTextContent(node, text){
+        node.textContent = text;
+    }
+
+    function setStyleScope(node, scopeId){
+        node.setAttribute(scopeId,'');
+    }
+
+    var nodeOps = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        createElement: createElement$1,
+        createTextNode: createTextNode,
+        createComment: createComment,
+        insertBefore: insertBefore,
+        removeChild: removeChild,
+        appendChild: appendChild,
+        parentNode: parentNode,
+        nextSibling: nextSibling,
+        tagName: tagName,
+        setTextContent: setTextContent,
+        setStyleScope: setStyleScope
+    });
+
+    const patch = createPatchFunction({ nodeOps, modules });
 
     iVue.prototype.__patch__ = patch;
 

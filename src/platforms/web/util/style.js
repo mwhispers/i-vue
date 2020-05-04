@@ -1,4 +1,4 @@
-import { cached, extend, toObject }  from 'src/shared/util.js' 
+import { cached, extend, toObject }  from '../../../shared/util.js' 
 
 export const parseStyleText = cached(function(cssText) {
     const res = {};
@@ -32,5 +32,29 @@ export function normalizeStyleBinding(bindingStyle){
 }
 
 export function getStyle(vnode, checkChild){
-    const res = {}
+    const res = {};
+    let styleData;
+    
+    if(checkChild){
+        let childNode = vnode;
+        while(childNode.componentInstance){
+            childNode = childNode.componentInstance._vnode;
+            if(childNode && childNode.data && (styleData = normalizeStyleData(childNode.data))){
+                extend(res, styleData);
+            }
+        }
+    }
+
+    if(styleData =  normalizeStyleData(vnode.data)){
+        extend(res, styleData);
+    }
+
+    let parentNode = vnode;
+    while((parentNode = parentNode.parent)){
+        if(parentNode.data && (styleData = normalizeStyleData(parentNode.data))){
+            extend(res, styleData)
+        }
+    }
+
+    return res;
 }

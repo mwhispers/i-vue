@@ -15,23 +15,15 @@ export function createPatchFunction(backend) {
 
     for(i = 0; i < hooks.length; i++){
         cbs[hooks[i]] = [];
-        for(j = 0; j < hooks.length; j++){
+        for(j = 0; j < modules.length; j++){
             if(isDef(modules[j][hooks[i]])){
                 cbs[hooks[i]].push(modules[j][hooks[i]])
             }
         }
     }
 
-    function parentNode(elm) {
-        return elm.parentNode;
-    }
-
-    function tagName(elm) {
-        return elm.tagName;
-    }
-
     function emptyNodeAt(elm) {
-        return new VNode(tagName(elm).toLowerCase(), {}, [], undefined, elm);
+        return new VNode(nodeOps.tagName(elm).toLowerCase(), {}, [], undefined, elm);
     }
 
     function createComponent(vnode, insertedVnodeQueue, parentElm, refElm) {
@@ -44,14 +36,14 @@ export function createPatchFunction(backend) {
             if (isDef(vnode.componentInstance)) {
                 initComponent(vnode, insertedVnodeQueue);
                 insert(parentElm, vnode.elm);
+                return true
             }
-            return true;
         }
+        return false
     }
 
     function initComponent(vnode, insertedVnodeQueue) {
         vnode.elm = vnode.componentInstance.$el;
-        invokeCreateHooks(vnode, insertedVnodeQueue);
     }
 
     function createElm(vnode, insertedVnodeQueue, parentElm, refElm) {
@@ -68,6 +60,9 @@ export function createPatchFunction(backend) {
 
         if (tag) {
             createChildren(vnode, children, []);
+            if(isDef(data)){
+                invokeCreateHooks(vnode,insertedVnodeQueue);
+            }
             if (parentElm) {
                 insert(parentElm, vnode.elm);
             }
@@ -113,7 +108,7 @@ export function createPatchFunction(backend) {
             }
 
             const oldElm = oldVnode.elm;
-            const parentElm = parentNode(oldElm);
+            const parentElm = nodeOps.parentNode(oldElm);
 
             createElm(vnode, [], parentElm, null);
         }
