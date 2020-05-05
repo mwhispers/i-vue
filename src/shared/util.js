@@ -69,3 +69,12 @@ const hyphenateRE = /\B([A-Z]])/g
 export const hyphenate = cached((str)=>{
     return str.replace(hyphenateRE, '-$1').toLowerCase()
 })
+
+export function remove(arr, item){
+    if(arr.length){
+        const index = arr.indexOf(item);
+        if(index > -1){
+            return arr.splice(index,1);
+        }
+    }
+}
