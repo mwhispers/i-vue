@@ -1,3 +1,5 @@
+import Watcher, {} from '../observer/watcher.js'
+import { noop } from '../util/index.js';
 export function initLifecycle(vm){
     const options = vm.$options;
 
@@ -44,5 +46,11 @@ export function mountComponent(vm, el, hydrating){
     let updateComponent = ()=>{
         vm._update(vm._render(),hydrating);
     };
-    updateComponent();
+    //updateComponent();
+    new Watcher(vm, updateComponent, noop, {
+        before(){
+            console.log('before update')
+        }
+    },true)
+    return vm;
 }

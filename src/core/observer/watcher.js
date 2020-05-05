@@ -46,7 +46,7 @@ export default class Watcher {
         try{
             value = this.getter.call(vm,vm);
         }catch(e){
-            Console.log(e)
+            console.log(e)
         }finally{
             popTarget();
             this.cleanupDeps();
@@ -58,7 +58,7 @@ export default class Watcher {
         const id = dep.id;
         if(!this.newDepIds.has(id)){
             this.newDepIds.add(id);
-            this.newDeps.add(dep);
+            this.newDeps.push(dep);
             if(!this.depIds.has(id)){
                 dep.addSub(this);
             }

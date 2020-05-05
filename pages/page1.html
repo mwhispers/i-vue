@@ -24,8 +24,11 @@
                 ])
             }
         }
-        new iVue({
+        var app = new iVue({
             el:'#app',
+            data:{
+                message:'hello World'
+            },
             render:function(h){
                 return h('p',[
                     h(component),
@@ -34,7 +37,7 @@
                             color:'#ff9900'
                         }
                     },'Good morning!!!!!'),
-                    h('div','Nice to meet you!!!!!!'),
+                    h('div',this.message),
                     h(component)
                 ]);
             }

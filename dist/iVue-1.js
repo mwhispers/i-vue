@@ -1,40 +1,7 @@
 var iVue = (function () {
     'use strict';
 
-    let warn = function(){};
-    {
-        warn = (msg,vm)=>{
-            console.error(`[iVue warn]: ${mag}`);
-        };
-    }
-
-    class VNode{
-        tag;
-        data;
-        children;
-        text;
-        elm;
-        context;
-        componentOptions;
-
-        isComment;
-        
-        constructor(tag, data, children,text, elm, context, componentOptions){
-            this.tag = tag;
-            this.data = data;
-            this.children = children;
-            this.text = text;
-            this.elm = elm;
-            this.context = context;
-            this.componentOptions = componentOptions;
-
-            this.isComment = false;
-        }
-    }
-
-    function createTextVNode(val){
-        return new VNode(undefined, undefined, undefined,String(val));
-    }
+    function noop(){}
 
     function extend(to, _from){
         for(const key in _from){
@@ -93,6 +60,65 @@ var iVue = (function () {
     const hyphenate = cached((str)=>{
         return str.replace(hyphenateRE, '-$1').toLowerCase()
     });
+
+    function remove(arr, item){
+        if(arr.length){
+            const index = arr.indexOf(item);
+            if(index > -1){
+                return arr.splice(index,1);
+            }
+        }
+    }
+
+    const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+    function hasOwn(obj,key){
+        return hasOwnProperty.call(obj,key);
+    }
+
+    let warn = function(){};
+    {
+        warn = (msg,vm)=>{
+            console.error(`[iVue warn]: ${mag}`);
+        };
+    }
+
+    function def(obj, key, val, enumerable){
+        Object.defineProperty(obj, key, {
+            value: val,
+            enumerable: !! enumerable,
+            writable: true,
+            configurable: true
+        });
+    }
+
+    class VNode{
+        tag;
+        data;
+        children;
+        text;
+        elm;
+        context;
+        componentOptions;
+
+        isComment;
+        
+        constructor(tag, data, children,text, elm, context, componentOptions){
+            this.tag = tag;
+            this.data = data;
+            this.children = children;
+            this.text = text;
+            this.elm = elm;
+            this.context = context;
+            this.componentOptions = componentOptions;
+
+            this.isComment = false;
+        }
+    }
+
+    function createTextVNode(val){
+        return new VNode(undefined, undefined, undefined,String(val));
+    }
 
     function normalizeChildren(children){
         return isPrimitive(children)
@@ -212,16 +238,181 @@ var iVue = (function () {
     }
 
     let uid = 0;
+
+    class Dep{
+        static target;
+        id;
+        subs;
+
+        constructor (){
+            this.id = uid++;
+            this.subs = [];
+        }
+
+        addSub (sub){
+            this.subs.push(sub);
+        }
+
+        remvoeSub (sub){
+            remove(this.subs, sub);
+        }
+
+        depend(){
+            if(Dep.target){
+                Dep.target.addDep(this);
+            }
+        }
+
+        notify(){
+            const subs = this.subs.slice();
+            for(let i = 0, l = subs.length; i < l; i++){
+                subs[i].update();
+            }
+        }
+    }
+
+    Dep.target = null;
+    const targetStack = [];
+
+    function pushTarget(target){
+        targetStack.push(target);
+        Dep.target = target;
+    }
+
+    function popTarget(target){
+        targetStack.pop();
+        Dep.target = targetStack[targetStack.length - 1];
+    }
+
+    class Observer {
+        constructor (value){
+            this.value = value;
+            this.dep = new Dep();
+            this.vmCount = 0;
+
+            def(value, '__ob__', this);
+            this.walk(value);
+        }
+
+        walk(obj){
+            const keys = Object.keys(obj);
+            for(let i = 0; i < keys.length; i++){
+                defineReactive(obj,keys[i]);
+            }
+        }
+    } 
+
+    function observe(value, asRootData){
+        if(!isObject(value) || value instanceof VNode){
+            return;
+        }
+        let ob;
+        if(hasOwn(value,'__ob__') && value.__ob__ instanceof Observer){
+            ob = value.__ob__;
+        } else {
+            ob = new Observer(value);
+        }
+
+        return ob;
+    }
+
+    function defineReactive(obj, key, val, customeSetter, shallow){
+        const dep = new Dep();
+        
+        const property = Object.getOwnPropertyDescriptor(obj,key);
+
+        if(property && property.configurable === false){
+            return
+        }
+
+        const getter = property && property.get;
+        const setter = property && property.set;
+
+        if((!getter || setter) && arguments.length === 2){
+            val = obj[key];
+        }
+
+        let childOb = !shallow && observe(val);
+
+        Object.defineProperty(obj,key,{
+            enumerable:true,
+            configurable:true,
+            get: function reactiveGetter(){
+                const value = getter ? getter.call(obj):val;
+                if(Dep.target){
+                    dep.depend();
+                    if(childOb){
+                        childOb.dep.depend();
+                    }
+                }
+                return value;
+            },
+            set: function reactiveSetter(newVal){
+                const value = getter ? getter.call(obj):val;
+                if(newVal === value){
+                    return
+                }
+                if(setter){
+                    setter.call(obj, newVal);
+                } else {
+                    val = newVal;
+                }
+                childOb = !shallow && observe(newVal);
+                dep.notify();
+            }
+        });
+    }
+
+    const sharedPropertyDefinition = {
+        enumerable:true,
+        configurable:true,
+        get:noop,
+        set:noop
+    };
+
+    function proxy(target, sourceKey, key){
+        sharedPropertyDefinition.get = function proxyGetter(){
+            return this[sourceKey][key];
+        };
+
+        sharedPropertyDefinition.set = function proxySetter(val){
+            this[sourceKey][key] = val;
+        };
+
+        Object.defineProperty(target, key, sharedPropertyDefinition);
+    } 
+
+    function initState(vm){
+        vm._watchers = [];
+        const opts = vm.$options;
+        if(opts.data){
+            initData(vm);
+        }
+    }
+
+    function initData(vm){
+        let data = vm.$options.data;
+        vm._data = data;
+        const keys = Object.keys(data);
+        let i = keys.length;
+        while(i--){
+            proxy(vm,'_data',keys[i]);
+        }
+        observe(data);
+    }
+
+    let uid$1 = 0;
     function initMixin(iVue){
         iVue.prototype._init = function(options){
             const vm = this;
-            vm._uid = uid++;
+            vm._uid = uid$1++;
             vm._isVue = true;
             //TODO expand
             vm.$options = mergeOptions(vm.constructor.options,options);
             vm.$options._base = iVue;
 
             initRender(vm);
+            initState(vm);
 
             if(vm.$options.el){
                 vm.$mount(vm.$options.el);
@@ -237,6 +428,282 @@ var iVue = (function () {
             ctorOptions[prop] = options[prop];
         }
         return ctorOptions;
+    }
+
+    //can we use __proto__ ?
+
+    //Nrowser enviroment sniffing
+    const inBrowser = typeof window !== 'undefined';
+    const UA = inBrowser && window.navigator.userAgent.toLowerCase();
+    const isIE = UA && /msie\trident/.test(UA);
+    const isIE9 = UA && UA.indexOf('msie 9.0') > 0;
+    const isEdge = UA && UA.indexOf('edge/') > 0;
+    const isChrome = UA && /chrome\/\d+/.test(UA) && !isEdge;
+    const isFF = UA && UA.match(/firefox\/(\d+)/);
+
+    const isAndroid = (UA && UA.indexOf('android') > 0);
+    const isIOS = (UA && /iphone|ipad|ipod|ios/.test(UA));
+
+    function isNative(Ctor){
+        return typeof Ctor === 'function' && /native code/.test(Ctor.toString());
+    }
+
+    const callbacks = [];
+    let pending = false;
+
+    function flushCallbacks(){
+        pending = false;
+        const copies = callbacks.slice(0);
+        callbacks.length = 0;
+        for(let i = 0; i < copies.length; i++){
+            copies[i]();
+        }
+    }
+
+    let timerFunc;
+    if(typeof Promise !== 'undefined' && isNative(Promise)){
+        const p = Promise.resolve();
+        timerFunc = () => {
+            p.then(flushCallbacks);
+            if(isIOS){
+                setTimeout(noop);
+            }
+        };
+    }else if(!isIE && typeof MutationObserver !== 'undefined' && (
+        isNative(MutationObserver) ||
+        MutationObserver.toString() === "[object MutationObserverConstructor]"
+    )){
+        let counter = 1;
+        const observer = new MutationObeserver(flushCallbacks);
+        const textNode = document.createTextNode(String(counter));
+        observer.observe(textNode,{
+            characterData: true
+        });
+        timerFunc = () => {
+            counter = (counter + 1) % 2;
+            textNode.data = String(counter);
+        };
+    }else if(typeof setImmediate !== 'undefined' && isNative(setImmediate)){
+        timerFunc = () => {
+            setImmediate(flushCallbacks);
+        };
+    }else {
+        timerFunc = () => {
+            setTimeout(flushCallbacks, 0);
+        };
+    }
+
+    function nextTick(cb,ctx){
+        let _resolve;
+        callbacks.push(() => {
+            if(cb) {
+                try{
+                    cb.call(ctx);
+                } catch (e) {
+                    console.log('nextTick');
+                }
+            } else if(_resolve){
+                _resolve(ctx);
+            }
+        });
+        if(!pending) {
+            pending = true;
+            timerFunc();
+        }
+        if(!cb && typeof Promise !== 'undefined'){
+            return new Promise(resolve => {
+                _resolve = resolve;
+            })
+        }
+    }
+
+    const queue = [];
+    const activatedChildren = [];
+    const has = {};
+    let waiting = false;
+    let flushing = false;
+    let index = 0;
+
+    function resetSchedulerState(){
+        index = queue.length = activatedChildren.length = 0;
+        has = {};
+        waiting = flushing = false;
+    }
+
+    function flushSchedulerQueue(){
+        flushing = true;
+        let watcher, id;
+
+        queue.sort((a,b)=> a.id - b.id);
+
+        for(index = 0; index < queue.length; index++){
+            watcher = queue[index];
+            if(watcher.before){
+                watcher.before();
+            }
+            id = watcher.id;
+            has[id] = null;
+            watcher.run();
+        }
+
+        resetSchedulerState();
+    }
+
+    function queueWatcher(watcher){
+        const id = watcher.id;
+        if(has[id] == null){
+            has[id] = true;
+            if(!flushing){
+                queue.push(watcher);
+            } else {
+                let i = queue.length - 1;
+                while(i > index && queue[i].id > watcher.id){
+                    i--;
+                }
+                queue.splice(i+1,watcher);
+            }
+
+            if(!waiting){
+                waiting = true;
+                nextTick(flushSchedulerQueue);
+            }   
+        }
+    }
+
+    let uid$2 = 0;
+    class Watcher {
+        constructor(vm, expOrFn, cb, options, isRenderWatcher){
+            this.vm = vm;
+            if(isRenderWatcher){
+                vm._watcher = this;
+            }
+            vm._watchers.push(this);
+            if(options){
+                this.deep = !!options.deep;
+                this.user = !!options.user;
+                this.lazy = !!options.lazy;
+                this.sync = !!options.sync;
+                this.before = options.before;
+            }else {
+                this.deep = this.user = this.lazy = this.sync = false;
+            }
+
+            this.cb = cb;
+            this.id = ++uid$2;
+            this.active = true;
+            this.dirty = this.lazy;
+            this.deps = [];
+            this.newDeps = [];
+            this.depIds = new Set();
+            this.newDepIds = new Set();
+            this.expression = '';
+
+            if(typeof expOrFn === 'function'){
+                this.getter = expOrFn;
+            }
+
+            this.value = this.lazy 
+              ? undefined
+              : this.get();
+        }
+
+        get(){
+            pushTarget(this);
+            let value;
+            const vm = this.vm;
+            try{
+                value = this.getter.call(vm,vm);
+            }catch(e){
+                console.log(e);
+            }finally{
+                popTarget();
+                this.cleanupDeps();
+            }
+            return value;
+        }
+
+        addDep(dep){
+            const id = dep.id;
+            if(!this.newDepIds.has(id)){
+                this.newDepIds.add(id);
+                this.newDeps.push(dep);
+                if(!this.depIds.has(id)){
+                    dep.addSub(this);
+                }
+            }
+        }
+
+        cleanupDeps() {
+            let i = this.deps.length;
+            while(i--){
+                const dep = this.deps[i];
+                if(!this.newDepIds.has(dep.id)){
+                    dep.removeSub(this);
+                }
+            }
+            let tmp = this.depIds;
+            this.depIds = this.newDepIds;
+            this.newDepIds = tmp;
+            this.newDepIds.clear();
+            tmp = this.deps;
+            this.deps = this.newDeps;
+            this.newDeps = tmp;
+            this.newDeps.length = 0;
+        }
+
+        update(){
+            if(this.lazy){
+                this.dirty = true;
+            }else if(this.sync) {
+                this.run();
+            }else {
+                queueWatcher(this); 
+            }
+        }
+
+        run(){
+            if(this.active){
+                const value = this.get();
+                if(value !== this.value || isObject(value) || this.deep){
+                    const oldValue = this.value;
+                    this.value = value;
+                    if(this.user){
+                        try{
+                            this.cb.call(this.vm, value, oldValue);
+                        }catch(err){
+                            Console.log(err);
+                        }
+                    }else {
+                        this.cb.call(this.vm, value, oldValue);
+                    }
+                }
+            }
+        }
+
+        evaluate(){
+            this.value = this.get();
+            this.dirty = false;
+        }
+
+        depend(){
+            let i = this.deps.length;
+            while(i--){
+                this.deps[i].depend();
+            }
+        }
+
+        tearDown(){
+            if(this.active){
+                if(!this.vm._isBeingDestroyed){
+                    remove(this.vm._watchers,this);
+                }
+                let i = this.deps.length;
+                while(i--){
+                    this.deps[i].removeSub(this);
+                }
+                this.active = false;
+            }
+        }
     }
 
     function lifecycleMixin(iVue){
@@ -261,7 +728,13 @@ var iVue = (function () {
         let updateComponent = ()=>{
             vm._update(vm._render(),hydrating);
         };
-        updateComponent();
+        //updateComponent();
+        new Watcher(vm, updateComponent, noop, {
+            before(){
+                console.log('before update');
+            }
+        },true);
+        return vm;
     }
 
     function iVue(options){

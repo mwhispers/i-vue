@@ -1,4 +1,5 @@
 import {initRender} from './render.js'
+import {initState} from './state.js'
 
 let uid = 0;
 export function initMixin(iVue){
@@ -11,6 +12,7 @@ export function initMixin(iVue){
         vm.$options._base = iVue;
 
         initRender(vm);
+        initState(vm);
 
         if(vm.$options.el){
             vm.$mount(vm.$options.el);
